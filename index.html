@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Renishaw Probe Routine Builder</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="header-content">
+          <div>
+            <h1>Renishaw Probe Routine Builder</h1>
+            <p>Next‑gen Haas VMC — visual G‑code generator</p>
+          </div>
+          <div class="header-buttons">
+            <button class="btn btn-green" id="btn-toggle-gcode">
+              <span>▶</span><span id="gc-label">Show G‑Code</span>
+            </button>
+            <button class="btn btn-blue" id="btn-download">
+              <span>⬇</span>Download
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="main">
+        <section class="workspace-panel">
+          <div class="workspace">
+            <div class="workspace-header">
+              <span class="dot"></span>
+              <span>Workspace (<span id="opCount">0</span> operations, <span id="itemCount">0</span> items)</span>
+            </div>
+
+            <div class="canvas">
+              <div class="empty" id="empty">
+                <div class="icon">🔧</div>
+                <p style="font-size:1.05rem; margin-bottom:.25rem;">
+                  Tap <em>Add</em> on any toolbox card to insert operations
+                </p>
+                <p style="font-size:.875rem;">Use folders/blocks to organize complex routines</p>
+              </div>
+
+              <div class="list" id="list" style="display:none;"></div>
+            </div>
+          </div>
+
+          <aside class="toolbox">
+            <div class="toolbox-header">
+              <span class="dot" style="background:var(--orange-500);"></span>
+              <span>Operations Toolbox</span>
+
+              <div style="margin-left:auto; display:flex; align-items:center; gap:.5rem;">
+                <label style="font-size:.875rem; color:var(--muted);">Add to:</label>
+                <select id="target-parent-select"
+                        style="padding:.25rem .5rem; border:1px solid var(--border); border-radius:.25rem; font-size:.875rem; background:#fff;">
+                  <option value="root">📂 Root</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="section" data-section="organization">
+              <div class="title"><span class="dot dot-yellow"></span><span>Organization</span></div>
+              <div class="grid" id="tools-organization"></div>
+            </div>
+
+            <div class="section" data-section="setup">
+              <div class="title"><span class="dot dot-orange"></span><span>Setup &amp; Positioning</span></div>
+              <div class="grid" id="tools-setup"></div>
+            </div>
+
+            <div class="section" data-section="probe">
+              <div class="title"><span class="dot dot-blue"></span><span>Probe Operations</span></div>
+              <div class="grid" id="tools-probe"></div>
+            </div>
+          </aside>
+        </section>
+
+        <aside class="gcode" id="gcode">
+          <div class="hd">Generated G‑Code</div>
+          <div class="content"><pre id="gcodePre"></pre></div>
+        </aside>
+      </div>
+    </div>
+  </body>
+</html>
