@@ -171,7 +171,16 @@
         </div>
 
         <aside class="toolbox">
-          <div class="toolbox-header"><span class="dot" style="background:var(--orange-500);"></span><span>Operations Toolbox</span></div>
+          <div class="toolbox-header">
+            <span class="dot" style="background:var(--orange-500);"></span>
+            <span>Operations Toolbox</span>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem;">
+              <label style="font-size: 0.875rem; color: var(--muted);">Add to:</label>
+              <select id="target-folder-select" style="padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; font-size: 0.875rem; background: white;">
+                <option value="root">📂 Root</option>
+              </select>
+            </div>
+          </div>
 
           <div class="section" data-section="organization">
             <div class="title"><span class="dot dot-yellow"></span><span>Organization</span></div>
@@ -237,6 +246,11 @@
         return s;
       }
     },
+     { id:'set-work-offset', name:'Work Offset', icon:'🎯', desc:'Set active work offset', category:'setup',
+      defaultParams:{ Offset:'G54', P:'None' },
+      parameterOptions:{ Offset:['G54', 'G55', 'G56', 'G57', 'G154'], P:['None', '1', '2', '3', '4'] },
+      gcode:(op)=>`T${op.params.Offset} M6\nS${op.params.P}\n\n`
+    },
     { id:'tool-change', name:'Tool Change', icon:'🔧', desc:'Change to specified tool', category:'setup',
       defaultParams:{ toolNumber:1, spindleSpeed:1000, coolant:'M8' },
       parameterOptions:{ coolant:['M8','M7','M9'] },
@@ -288,14 +302,27 @@
   const TOOL_BY_ID = Object.fromEntries(TOOLS.map(t=>[t.id,t]));
 
   // ============ State Store ============
-  const state = { ops: [], collapsed: new Set(), showGCode:false, editingId:null };
+  const state = { ops: [], collapsed: new Set(), showGCode:false, editingId:null, targetFolderId: 'root' };
   const uid = ()=> 'op_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1e4).toString(36);
 
   // ============ Core Operations / Mutations ============
   function addOp(toolId){
     const t = TOOL_BY_ID[toolId]; if(!t) return;
     const op = { id:uid(), toolId: t.id, name:t.name, icon:t.icon, category:t.category, description:t.desc, params:{...t.defaultParams}, children: t.id==='folder'? []: undefined };
-    state.ops.push(op);
+    
+    // Add to selected target folder or root
+    if(state.targetFolderId === 'root'){
+      state.ops.push(op);
+    } else {
+      const targetFolder = state.ops.find(o => o.id === state.targetFolderId && o.toolId === 'folder');
+      if(targetFolder && targetFolder.children){
+        targetFolder.children.push(op);
+      } else {
+        // Fallback to root if target folder not found
+        state.ops.push(op);
+      }
+    }
+    
     renderAll();
   }
   function findOp(id){
@@ -388,6 +415,7 @@
     itemCountEl.textContent = state.ops.length.toString();
     if(state.showGCode) renderGCode();
     refreshAllFolderMenus();
+    refreshTargetFolderDropdown();
   }
   function countNonFolderOps(arr){
     let c=0; for(const o of arr){ if(o.toolId==='folder'){ c += (o.children?.length||0);} else c++; } return c;
@@ -495,6 +523,27 @@
     }
     return items;
   }
+  function refreshTargetFolderDropdown(){
+    const select = qs('#target-folder-select');
+    if(!select) return;
+    
+    // Clear existing options
+    select.replaceChildren();
+    
+    // Add root option
+    const rootOption = el('option', {value: 'root'}, ['📂 Root']);
+    if(state.targetFolderId === 'root') rootOption.selected = true;
+    select.append(rootOption);
+    
+    // Add folder options
+    for(const folder of state.ops.filter(o => o.toolId === 'folder')){
+      const folderName = folder.params?.name || 'Unnamed Folder';
+      const option = el('option', {value: folder.id}, [`📁 ${folderName}`]);
+      if(state.targetFolderId === folder.id) option.selected = true;
+      select.append(option);
+    }
+  }
+  
   function closeAllFolderMenus(){ qsa('.fd-menu').forEach(m=>m.classList.remove('show')); qsa('.fd-btn').forEach(b=>b.setAttribute('aria-expanded','false')); }
 
   // ============ G-code ============
@@ -657,6 +706,11 @@
     const url = URL.createObjectURL(blob);
     const a = el('a',{href:url, download:'probe_routine.nc'});
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // Target folder dropdown
+  qs('#target-folder-select').addEventListener('change', (e)=>{
+    state.targetFolderId = e.target.value;
   });
 
   // Toolbox rendering (data-driven)
