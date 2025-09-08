@@ -776,6 +776,10 @@
         defaultParams: { offset: 'G54', P: '1' },
         parameterOptions: { offset: ['G54', 'G55', 'G56', 'G57', 'G154'], P: ['1', '2', '3', '4', '5'] },
         gcode: (op) => {
+          console.log('Offset param:', JSON.stringify(op.params.offset));
+          console.log('Offset type:', typeof op.params.offset);
+          console.log('Equals G154?', op.params.offset === 'G154');
+
           let s = `${op.params.offset}`;
           if (op.params.offset === 'G154') s += ` P${op.params.P}`;
           s += '\n\n';
@@ -790,7 +794,7 @@
       },
       {
         id: 'probe-on', name: 'Probe On', icon: '🔴', desc: 'Activate probe mode', category: 'setup',
-        defaultParams: { probeLength: 50, offsetNumber: 1 },
+        defaultParams: {offsetNumber: 1 },
         gcode: (op) => `G43 H${op.params.offsetNumber} (Probe length offset)\nG65 P9832 (Initialize probe system)\n\n`
       },
       {
@@ -839,6 +843,25 @@
         id: 'angle-probe', name: 'Angle Probing', icon: '📐', desc: 'Probe angled surface', category: 'probe',
         defaultParams: { x1: 0, y1: 0, x2: 10, y2: 5, z: -10, feedRate: 10 },
         gcode: (op) => `G65 P9816 X${op.params.x1} Y${op.params.y1} I${op.params.x2} J${op.params.y2} Z${op.params.z} F${op.params.feedRate}\n\n`
+      },
+      {
+        id: 'store-result',
+        name: 'Store Result',
+        icon: '💾',
+        desc: 'Store probe result to macro variable',
+        category: 'probe',
+        defaultParams: { result: 'X', varNumber: '1' },
+        parameterOptions: {
+          result: ['X', 'Y', 'Z', 'Size'],
+          varNumber: Array.from({ length: 33 }, (_, i) => String(i + 1))
+            .concat(Array.from({ length: 99 }, (_, i) => String(10801 + i)))
+        },
+        gcode: (op) => {
+          const map = { X: 10185, Y: 10186, Z: 10187, Size: 10188 };
+          const src = map[op.params.result] ?? 10185;
+          const tgt = Number(op.params.varNumber) || 1;
+          return `#${tgt}= #${src}\n\n`;
+        }
       },
     ];
     const TOOL_BY_ID = Object.fromEntries(TOOLS.map(t => [t.id, t]));
