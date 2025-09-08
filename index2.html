@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Renishaw Probe Routine Builder — Refactor</title>
+  <style>
+    /* --- Base / Reset --- */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #f3f4f6;
+      --text: #111827;
+      --muted: #6b7280;
+      --panel: #ffffff;
+      --border: #e5e7eb;
+      --primary: #2563eb;
+      --primary-600: #1d4ed8;
+      --accent: #10b981;
+      --shadow: rgba(0,0,0,.1);
+      --blue-100:#dbeafe; --blue-500:#3b82f6;
+      --orange-500:#ea580c; --yellow-500:#eab308;
+      --green-600:#059669; --green-700:#047857;
+      --red-600:#dc2626;
+    }
+    html, body { height: 100%; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+    /* --- Layout --- */
+    .app { display:flex; flex-direction:column; height:100vh; }
+    .header { background:#111827; color:#fff; padding:1rem; box-shadow:0 4px 6px -1px var(--shadow); }
+    .header-content { display:flex; justify-content:space-between; align-items:center; gap:.75rem; flex-wrap:wrap; }
+    .header h1 { font-size:1.25rem; font-weight:700; }
+    .header p { color:#d1d5db; font-size:.875rem; }
+    .header-buttons { display:flex; gap:.5rem; }
+    .btn { display:inline-flex; align-items:center; gap:.5rem; border:none; border-radius:.375rem; padding:.5rem 1rem; font-size:.875rem; cursor:pointer; transition:filter .15s ease, transform .06s ease; }
+    .btn:active{ transform: translateY(1px); }
+    .btn-blue{ background:var(--primary); color:#fff; }
+    .btn-blue:hover{ background:var(--primary-600); }
+    .btn-green{ background:var(--green-600); color:#fff; }
+    .btn-green:hover{ background:var(--green-700); }
+
+    .main { display:flex; flex:1; min-height:0; overflow:hidden; }
+    .workspace-panel { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; } /* min-height:0 to allow internal scroll */
+    .workspace { flex:1; min-height:0; overflow:auto; padding:1rem 1.25rem; }
+
+    .workspace-header { display:flex; align-items:center; gap:.5rem; margin-bottom:1rem; font-size:1.0625rem; font-weight:600; }
+    .dot { width:.65rem; height:.65rem; border-radius:999px; background:var(--blue-500); }
+
+    .canvas { background:var(--panel); border:2px dashed var(--border); border-radius:.5rem; min-height:22rem; padding:1rem; box-shadow:0 1px 3px 0 var(--shadow); }
+    .empty { text-align:center; color:var(--muted); padding:2.5rem 0; }
+    .empty .icon { font-size:3rem; margin-bottom:.5rem; }
+
+    .list { display:flex; flex-direction:column; gap:.75rem; }
+    .card { background:#fff; border:1px solid var(--border); border-radius:.5rem; padding:1rem; box-shadow:0 1px 3px 0 var(--shadow); }
+    .card:hover{ box-shadow:0 4px 6px -1px var(--shadow); }
+    .card.folder{ border-left:4px solid var(--yellow-500); background:#fefce8; }
+
+    .row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; }
+    .info { display:flex; align-items:center; gap:.75rem; min-width:0; }
+    .icon { font-size:1.4rem; flex:none; }
+    .meta { min-width:0; }
+    .meta h3 { font-weight:600; font-size:1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .meta p { color:var(--muted); font-size:.8125rem; }
+
+    .controls { display:flex; align-items:center; gap:.25rem; flex-wrap:wrap; }
+    .pill { padding:.2rem .5rem; border-radius:.25rem; font-size:.75rem; font-weight:600; }
+    .pill.folder{ background:#fef3c7; color:#92400e; }
+    .pill.setup{ background:#fed7aa; color:#c2410c; }
+    .pill.probe{ background:var(--blue-100); color:var(--primary-600); }
+
+    .cbtn { background:none; border:none; padding:.25rem; border-radius:.25rem; color:#6b7280; cursor:pointer; }
+    .cbtn:hover{ color:#374151; }
+    .cbtn.blue:hover{ color:var(--primary); }
+    .cbtn.green:hover{ color:var(--green-600); }
+    .cbtn.red:hover{ color:var(--red-600); }
+
+    .children { margin-top:.75rem; margin-left:1.25rem; display:flex; flex-direction:column; gap:.6rem; }
+    .child { background:#fff; border:1px solid var(--border); border-radius:.5rem; padding:.75rem; box-shadow:0 1px 2px 0 rgba(0,0,0,.05); }
+
+    .folder-selector{ position:relative; display:inline-block; }
+    .fd-btn{ display:flex; align-items:center; gap:.25rem; padding:.25rem .5rem; background:#f3f4f6; border:none; border-radius:.25rem; font-size:.75rem; color:#374151; cursor:pointer; }
+    .fd-btn:hover{ background:#e5e7eb; }
+    .fd-menu{ position:absolute; top:100%; left:0; margin-top:.25rem; background:#fff; border:1px solid var(--border); border-radius:.5rem; box-shadow:0 10px 15px -3px rgba(0,0,0,.1); min-width:8rem; display:none; z-index:10; }
+    .fd-menu.show{ display:block; }
+    .fd-item{ display:block; width:100%; text-align:left; padding:.5rem .75rem; background:none; border:none; font-size:.75rem; color:#374151; cursor:pointer; }
+    .fd-item:hover{ background:#f9fafb; }
+    .fd-item.selected{ background:#eff6ff; color:var(--primary-600); }
+
+    /* Toolbox */
+    .toolbox { background:#f9fafb; border-top:1px solid var(--border); padding:1rem; min-height:16rem; max-height:35vh; overflow:auto; flex-shrink:0; } /* stays fixed; workspace scrolls */
+    .toolbox-header { display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; font-weight:600; }
+    .section { margin-bottom:1.25rem; }
+    .section .title { display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem; font-weight:600; }
+    .dot-yellow{ background:var(--yellow-500); } .dot-orange{ background:var(--orange-500);} .dot-blue{ background:var(--blue-500);}
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; }
+    .tool { background:#fff; border:1px solid var(--border); border-radius:.5rem; padding:1rem; min-height:120px; display:flex; flex-direction:column; justify-content:space-between; text-align:center; cursor:pointer; transition: box-shadow .15s ease, border-color .15s ease; }
+    .tool:hover{ box-shadow:0 4px 6px -1px var(--shadow); border-color:var(--blue-500); }
+    .tool .icon{ font-size:1.5rem; }
+    .tool h4{ font-size:.9rem; font-weight:600; }
+    .tool p{ color:var(--muted); font-size:.75rem; }
+    .add { display:flex; align-items:center; justify-content:center; gap:.25rem; padding:.25rem .5rem; background:#eff6ff; color:var(--primary-600); border:none; border-radius:.25rem; font-size:.75rem; }
+    .add:hover{ background:#dbeafe; }
+
+    /* G-code panel */
+    .gcode { width:24rem; min-width:20rem; background:#111827; color:var(--accent); font-family:"Courier New",monospace; border-left:1px solid #374151; display:none !important; flex-direction:column; }
+    .gcode.show{ display:flex !important; }
+    .gcode .hd{ padding:.75rem; border-bottom:1px solid #374151; color:#fff; font-weight:600; font-size:.95rem; }
+    .gcode .content{ flex:1; min-height:0; overflow:auto; padding:.75rem; }
+    .gcode pre{ margin:0; font-size:.72rem; white-space:pre-wrap; line-height:1.35; }
+
+    /* Modal (Edit + Confirm) */
+    .backdrop{ position:fixed; inset:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center; z-index:50; }
+    .backdrop.show{ display:flex; }
+    .modal{ background:#fff; width:90%; max-width:32rem; max-height:90vh; border-radius:.5rem; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,.25); }
+    .modal .mh{ display:flex; align-items:center; justify-content:space-between; padding:1rem 1.25rem; border-bottom:1px solid var(--border); }
+    .modal .mh h3{ font-size:1.05rem; }
+    .x{ background:none; border:none; color:#9ca3af; font-size:1.1rem; padding:.25rem; cursor:pointer; }
+    .x:hover{ color:#6b7280; }
+    .modal .mb{ padding:1rem 1.25rem; overflow:auto; }
+    .modal .mf{ display:flex; justify-content:flex-end; gap:.5rem; padding:1rem 1.25rem; border-top:1px solid var(--border); }
+
+    .grid2 { display:grid; grid-template-columns: repeat(2, 1fr); gap:1rem; }
+    .grp{ display:flex; flex-direction:column; }
+    .grp.full{ grid-column: span 2; }
+    .lab{ font-size:.875rem; font-weight:600; color:#374151; margin-bottom:.4rem; }
+    .inp, .sel, .ta{ padding:.5rem .75rem; border:1px solid #d1d5db; border-radius:.5rem; font-size:.9rem; }
+    .ta{ min-height:4rem; resize:vertical; }
+    .inp:focus, .sel:focus, .ta:focus{ outline:none; border-color:var(--blue-500); box-shadow:0 0 0 3px rgba(59,130,246,.1); }
+
+    /* Mobile tweaks */
+    @media (max-width: 768px){
+      .header { padding:.6rem; }
+      .header h1{ font-size:1rem; }
+      .header p{ font-size:.75rem; }
+      .main{ flex-direction:column; height: calc(100vh - 80px); }
+      .workspace-panel{ min-height:0; }
+      .workspace{ padding:.75rem; }
+      .canvas{ min-height:14rem; }
+      .toolbox{ min-height:12rem; max-height:40vh; }
+      .gcode{ width:100%; min-width:auto; height:40vh; max-height:40vh; border-left:none; border-top:2px solid var(--accent); box-shadow:0 -4px 6px var(--shadow); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-content">
+        <div>
+          <h1>Renishaw Probe Routine Builder</h1>
+          <p>Next Gen Haas VMC — Visual G‑Code Generator</p>
+        </div>
+        <div class="header-buttons">
+          <button class="btn btn-green" id="btn-toggle-gcode"><span>▶</span><span id="gc-label">Show G‑Code</span></button>
+          <button class="btn btn-blue" id="btn-download"><span>⬇</span>Download</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="main">
+      <section class="workspace-panel">
+        <div class="workspace">
+          <div class="workspace-header"><span class="dot"></span><span>Workspace (<span id="opCount">0</span> operations, <span id="itemCount">0</span> items)</span></div>
+          <div class="canvas">
+            <div class="empty" id="empty">
+              <div class="icon">🔧</div>
+              <p style="font-size:1.05rem; margin-bottom:.25rem;">Tap <em>Add</em> on any toolbox card to insert operations</p>
+              <p style="font-size:.875rem;">Use folders to organize complex routines</p>
+            </div>
+            <div class="list" id="list" style="display:none;"></div>
+          </div>
+        </div>
+
+        <aside class="toolbox">
+          <div class="toolbox-header">
+            <span class="dot" style="background:var(--orange-500);"></span>
+            <span>Operations Toolbox</span>
+            <div style="margin-left: auto; display: flex; align-items: center; gap: 0.5rem;">
+              <label style="font-size: 0.875rem; color: var(--muted);">Add to:</label>
+              <select id="target-folder-select" style="padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; font-size: 0.875rem; background: white;">
+                <option value="root">📂 Root</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section" data-section="organization">
+            <div class="title"><span class="dot dot-yellow"></span><span>Organization</span></div>
+            <div class="grid" id="tools-organization"></div>
+          </div>
+
+          <div class="section" data-section="setup">
+            <div class="title"><span class="dot dot-orange"></span><span>Setup &amp; Positioning</span></div>
+            <div class="grid" id="tools-setup"></div>
+          </div>
+
+          <div class="section" data-section="probe">
+            <div class="title"><span class="dot dot-blue"></span><span>Probe Operations</span></div>
+            <div class="grid" id="tools-probe"></div>
+          </div>
+        </aside>
+      </section>
+
+      <aside class="gcode" id="gcode">
+        <div class="hd">Generated G‑Code</div>
+        <div class="content"><pre id="gcodePre"></pre></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Shared Modal Backdrop (Edit + Confirm) -->
+  <div class="backdrop" id="backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="mh">
+        <h3 id="modal-title">Edit Operation</h3>
+        <button class="x" data-action="close-modal" aria-label="Close">✕</button>
+      </div>
+      <div class="mb" id="modal-body"></div>
+      <div class="mf" id="modal-footer"></div>
+    </div>
+  </div>
+
+  <script>
+  // ============ Small DOM helpers (FIXED: lowercase event names) ============
+  const qs = (s, el=document)=>el.querySelector(s);
+  const qsa = (s, el=document)=>Array.from(el.querySelectorAll(s));
+  const el = (tag, attrs={}, children=[])=>{
+    const n = document.createElement(tag);
+    for(const [k,v] of Object.entries(attrs)){
+      if(k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2).toLowerCase(), v);
+      else if(k === 'class') n.className = v; else if(k === 'dataset') Object.assign(n.dataset, v);
+      else n.setAttribute(k, v);
+    }
+    for(const c of [].concat(children)) n.append(c instanceof Node? c : document.createTextNode(c));
+    return n;
+  };
+
+  // ============ Tool Registry (easy to extend) ============
+  const TOOLS = [
+    { id:'folder', name:'Folder', icon:'📁', desc:'Organize operations in folders', category:'organization',
+      defaultParams:{ name:'New Section', description:'' },
+      gcode:(op)=>{
+        let s = `;===== ${op.params.name?.toUpperCase()||'SECTION'} =====\n`;
+        if(op.params.description) s += `;${op.params.description}\n`;
+        s += `\n`;
+        if(op.children?.length) s += generateGCodeForList(op.children);
+        s += `;===== END ${op.params.name?.toUpperCase()||'SECTION'} =====\n\n`;
+        return s;
+      }
+    },
+    { id:'tool-change', name:'Tool Change', icon:'🔧', desc:'Change to specified tool', category:'setup',
+      defaultParams:{ toolNumber:1, spindleSpeed:1000, coolant:'M8' },
+      parameterOptions:{ coolant:['M8','M7','M9'] },
+      gcode:(op)=>`T${op.params.toolNumber} M6\nS${op.params.spindleSpeed} M3\n${op.params.coolant}\n\n`
+    },
+    { id:'probe-on', name:'Probe On', icon:'🔴', desc:'Activate probe mode', category:'setup',
+      defaultParams:{ probeLength:50, offsetNumber:1 },
+      gcode:(op)=>`G43 H${op.params.offsetNumber} (Probe length offset)\nG65 P9832 (Initialize probe system)\n\n`
+    },
+    { id:'safe-mode', name:'Safe Mode', icon:'🛡️', desc:'G65 P9810 safe positioning', category:'setup',
+      defaultParams:{ x:0, y:0, z:25, feedRate:1000 },
+      gcode:(op)=>`G65 P9810 X${op.params.x} Y${op.params.y} Z${op.params.z} F${op.params.feedRate}\n\n`
+    },
+    { id:'rapid-move', name:'Rapid Move', icon:'⚡', desc:'G0 rapid positioning', category:'setup',
+      defaultParams:{ x:0, y:0, z:25 },
+      gcode:(op)=>`G0 X${op.params.x} Y${op.params.y} Z${op.params.z}\n\n`
+    },
+    { id:'single-point', name:'Single Point Probe', icon:'📍', desc:'Probe a single point', category:'probe',
+      defaultParams:{ x:0, y:0, z:-10, feedRate:10 },
+      gcode:(op)=>`G65 P9810 X${op.params.x} Y${op.params.y} Z${op.params.z} F${op.params.feedRate}\n\n`
+    },
+    { id:'corner-2pt', name:'2-Point Corner', icon:'📐', desc:'Find corner using 2 points', category:'probe',
+      defaultParams:{ x1:0, y1:0, x2:10, y2:10, z:-10, feedRate:10 },
+      gcode:(op)=>`G65 P9814 X${op.params.x1} Y${op.params.y1} Z${op.params.z} F${op.params.feedRate}\n`+
+                   `G65 P9814 X${op.params.x2} Y${op.params.y2} Z${op.params.z} F${op.params.feedRate}\n\n`
+    },
+    { id:'bore-probe', name:'Bore Probing', icon:'⭕', desc:'Probe inside diameter', category:'probe',
+      defaultParams:{ x:0, y:0, z:-10, nominalDia:20, feedRate:10 },
+      gcode:(op)=>`G65 P9812 X${op.params.x} Y${op.params.y} Z${op.params.z} D${op.params.nominalDia} F${op.params.feedRate}\n\n`
+    },
+    { id:'boss-probe', name:'Boss Probing', icon:'🔵', desc:'Probe outside diameter', category:'probe',
+      defaultParams:{ x:0, y:0, z:-10, nominalDia:20, feedRate:10 },
+      gcode:(op)=>`G65 P9813 X${op.params.x} Y${op.params.y} Z${op.params.z} D${op.params.nominalDia} F${op.params.feedRate}\n\n`
+    },
+    { id:'pocket-probe', name:'Pocket Probing', icon:'🔲', desc:'Probe rectangular pocket', category:'probe',
+      defaultParams:{ x:0, y:0, z:-10, width:20, height:15, feedRate:10 },
+      gcode:(op)=>`G65 P9815 X${op.params.x} Y${op.params.y} Z${op.params.z} A${op.params.width} B${op.params.height} F${op.params.feedRate}\n\n`
+    },
+    { id:'surface-probe', name:'Surface Probing', icon:'📏', desc:'Probe flat surface', category:'probe',
+      defaultParams:{ x:0, y:0, z:-10, length:20, direction:'X+', feedRate:10 },
+      parameterOptions:{ direction:['X+','X-','Y+','Y-'] },
+      gcode:(op)=>`G65 P9811 X${op.params.x} Y${op.params.y} Z${op.params.z} A${op.params.length} F${op.params.feedRate}\n\n`
+    },
+    { id:'angle-probe', name:'Angle Probing', icon:'📐', desc:'Probe angled surface', category:'probe',
+      defaultParams:{ x1:0, y1:0, x2:10, y2:5, z:-10, feedRate:10 },
+      gcode:(op)=>`G65 P9816 X${op.params.x1} Y${op.params.y1} I${op.params.x2} J${op.params.y2} Z${op.params.z} F${op.params.feedRate}\n\n`
+    },
+  ];
+  const TOOL_BY_ID = Object.fromEntries(TOOLS.map(t=>[t.id,t]));
+
+  // ============ State Store ============
+  const state = { ops: [], collapsed: new Set(), showGCode:false, editingId:null, targetFolderId: 'root' };
+  const uid = ()=> 'op_'+Date.now().toString(36)+'_'+Math.floor(Math.random()*1e4).toString(36);
+
+  // ============ Core Operations / Mutations ============
+  function addOp(toolId){
+    const t = TOOL_BY_ID[toolId]; if(!t) return;
+    const op = { id:uid(), toolId: t.id, name:t.name, icon:t.icon, category:t.category, description:t.desc, params:{...t.defaultParams}, children: t.id==='folder'? []: undefined };
+    
+    // Add to selected target folder or root
+    if(state.targetFolderId === 'root'){
+      state.ops.push(op);
+    } else {
+      const targetFolder = state.ops.find(o => o.id === state.targetFolderId && o.toolId === 'folder');
+      if(targetFolder && targetFolder.children){
+        targetFolder.children.push(op);
+      } else {
+        // Fallback to root if target folder not found
+        state.ops.push(op);
+      }
+    }
+    
+    renderAll();
+  }
+  function findOp(id){
+    for(const o of state.ops){
+      if(o.id===id) return o;
+      if(Array.isArray(o.children)){
+        const m = o.children.find(c=>c.id===id);
+        if(m) return m;
+      }
+    }
+    return null;
+  }
+  function findParentId(id){
+    for(const o of state.ops){ if(o.children && o.children.some(c=>c.id===id)) return o.id; }
+    return null;
+  }
+  function detachOp(id){
+    const i = state.ops.findIndex(o=>o.id===id);
+    if(i>-1) return state.ops.splice(i,1)[0];
+    for(const f of state.ops){
+      if(f.children){
+        const j = f.children.findIndex(c=>c.id===id);
+        if(j>-1) return f.children.splice(j,1)[0];
+      }
+    }
+    return null;
+  }
+  function moveToFolder(opId, targetFolderId){
+    const op = detachOp(opId); if(!op) return;
+    if(!targetFolderId || targetFolderId==='root'){ state.ops.push(op); renderAll(); return; }
+    const folder = state.ops.find(o=>o.id===targetFolderId && o.toolId==='folder');
+    if(folder && folder.children){ folder.children.push(op); }
+    renderAll();
+  }
+  function updateParams(id, patch){
+    state.ops = state.ops.map(o=>{
+      if(o.id===id) return {...o, params:{...o.params, ...patch}};
+      if(o.children) return {...o, children:o.children.map(c=> c.id===id ? {...c, params:{...c.params, ...patch}} : c)};
+      return o;
+    });
+    if(state.editingId===id) state.editingId = id;
+    renderAll();
+  }
+  function duplicateOp(id){
+    const op = findOp(id); if(!op) return;
+    const parentId = findParentId(id);
+    const copy = JSON.parse(JSON.stringify(op)); copy.id = uid();
+    if(parentId){ const folder = state.ops.find(o=>o.id===parentId); folder?.children?.push(copy); }
+    else { state.ops.push(copy); }
+    renderAll();
+  }
+  async function removeOp(id){
+    const op = findOp(id); if(!op) return;
+    const name = op.toolId==='folder' ? (op.params?.name||'Folder') : op.name;
+    const extra = op.toolId==='folder' && op.children?.length ? `\nThis folder contains ${op.children.length} operation(s).` : '';
+    const ok = await confirm(`Delete ${op.toolId==='folder'?'folder':'operation'}?`, `Are you sure you want to remove "${name}"?${extra}`);
+    if(!ok) return;
+    state.ops = state.ops.filter(o=>o.id!==id).map(o=> o.children? {...o, children:o.children.filter(c=>c.id!==id)} : o);
+    renderAll();
+  }
+  function moveOp(index, toIndex){
+    if(index===toIndex|| index<0 || toIndex<0 || index>=state.ops.length || toIndex>=state.ops.length) return;
+    const [m] = state.ops.splice(index,1); state.ops.splice(toIndex,0,m); renderAll();
+  }
+  function moveChild(folderId, from, to){
+    const f = state.ops.find(o=>o.id===folderId);
+    if(!f || !f.children || from===to || from<0 || to<0 || from>=f.children.length || to>=f.children.length) return;
+    const [m] = f.children.splice(from,1); f.children.splice(to,0,m); renderAll();
+  }
+  function toggleFolderCollapse(folderId){
+    state.collapsed.has(folderId) ? state.collapsed.delete(folderId) : state.collapsed.add(folderId);
+    renderAll();
+  }
+
+  // ============ Rendering ============
+  const listEl = qs('#list');
+  const emptyEl = qs('#empty');
+  const opCountEl = qs('#opCount');
+  const itemCountEl = qs('#itemCount');
+  const gcodePanel = qs('#gcode');
+  const gcodePre = qs('#gcodePre');
+
+  function renderAll(){
+    if(state.ops.length===0){ emptyEl.style.display='block'; listEl.style.display='none'; listEl.replaceChildren(); }
+    else{
+      emptyEl.style.display='none'; listEl.style.display='flex';
+      listEl.replaceChildren(...state.ops.map((op,i)=> renderCard(op,i,false,0,null)));
+    }
+    opCountEl.textContent = countNonFolderOps(state.ops).toString();
+    itemCountEl.textContent = state.ops.length.toString();
+    if(state.showGCode) renderGCode();
+    refreshAllFolderMenus();
+    refreshTargetFolderDropdown();
+  }
+  function countNonFolderOps(arr){
+    let c=0; for(const o of arr){ if(o.toolId==='folder'){ c += (o.children?.length||0);} else c++; } return c;
+  }
+
+  function renderCard(op, index, isChild, childIndex, parentId){
+    const isFolder = op.toolId==='folder';
+    const isCollapsed = state.collapsed.has(op.id);
+    const numberClass = isFolder? 'folder' : (op.category==='setup'? 'setup':'probe');
+    const opNumber = isChild? `#${index+1}.${childIndex+1}` : `#${index+1}`;
+
+    const name = isFolder? (op.params?.name||'Folder') : op.name;
+    const desc = isFolder? `${op.children?.length||0} operations` : op.description;
+
+    // folder selector
+    let folderSelector = null;
+    if(!isFolder){
+      const locName = ( ()=>{ const pid = findParentId(op.id); if(!pid) return 'Root'; const f = state.ops.find(o=>o.id===pid); return f?.params?.name || 'Unnamed Folder'; })();
+      folderSelector = el('div', {class:'folder-selector'}, [
+        el('button', {class:'fd-btn', dataset:{opId:op.id}, 'aria-haspopup':'true', 'aria-expanded':'false'}, ['📁 ', locName, ' ', el('span',{style:'font-size:.6rem;'},['▼'])]),
+        el('div', {class:'fd-menu', id:`fd-${op.id}`})
+      ]);
+    }
+
+    // Reorder availability — ID-safe & robust
+    const canMoveUpRoot = !isChild && index > 0;
+    const canMoveDownRoot = !isChild && index < state.ops.length - 1;
+    let canMoveUpChild = false, canMoveDownChild = false;
+    if (isChild && parentId) {
+      const f = findOp(parentId);
+      const childLen = Array.isArray(f?.children) ? f.children.length : 0;
+      canMoveUpChild = childIndex > 0;
+      canMoveDownChild = childIndex >= 0 && childIndex < childLen - 1;
+    }
+
+    const duplicateBtn = !isFolder ? el('button',{class:'cbtn green', title:'Duplicate', dataset:{action:'duplicate', id:op.id}},['📋']) : null;
+    const delBtn = el('button',{class:'cbtn red', title:'Delete', dataset:{action:'delete', id:op.id}},['🗑']);
+    const editBtn = el('button',{class:'cbtn blue', title:'Edit', dataset:{action:'edit', id:op.id}},['⚙']);
+
+    const upBtn = el('button',{
+      class:'cbtn', title:'Move Up',
+      ...(!(isChild ? canMoveUpChild : canMoveUpRoot) && {disabled: true}),
+      dataset:{action: isChild ? 'move-child-up' : 'move-up', id:op.id, parentId: parentId || ''}
+    },['▲']);
+
+    const downBtn = el('button',{
+      class:'cbtn', title:'Move Down',
+      ...(!(isChild ? canMoveDownChild : canMoveDownRoot) && {disabled: true}),
+      dataset:{action: isChild ? 'move-child-down' : 'move-down', id:op.id, parentId: parentId || ''}
+    },['▼']);
+
+    const controls = el('div',{class:'controls'},[
+      el('span',{class:`pill ${numberClass}`},[opNumber]),
+      ...(folderSelector? [folderSelector]: []),
+      editBtn,
+      ...(duplicateBtn? [duplicateBtn]: []),
+      delBtn,
+      el('div',{class:'controls', style:'flex-direction:column;'},[upBtn, downBtn])
+    ]);
+
+    const left = el('div',{class:'info'},[
+      isFolder? el('button',{class:'cbtn', dataset:{action:'toggle-folder', id:op.id}, title: isCollapsed? 'Expand':'Collapse'},[ isCollapsed?'▶':'▼' ]) : null,
+      el('span',{class:'icon'},[ isFolder? (isCollapsed? '📁':'📂') : op.icon ]),
+      el('div',{class:'meta'},[
+        el('h3',{},[name]),
+        el('p',{},[desc])
+      ])
+    ].filter(Boolean));
+
+    const top = el('div',{class:'row'},[left, controls]);
+    const card = el('div',{class:'card'+(isFolder?' folder':''), dataset:{opId:op.id}},[top]);
+
+    if(isFolder && !isCollapsed && op.children?.length){
+      const kids = el('div',{class:'children'}, op.children.map((ch,ci)=>{
+        const childCard = renderCard(ch, index, true, ci, op.id);
+        childCard.classList.add('child');
+        return childCard;
+      }));
+      card.append(kids);
+    }
+
+    return card;
+  }
+
+  function refreshAllFolderMenus(){
+    for(const menu of qsa('.fd-menu')){
+      const opId = menu.id.replace('fd-','');
+      menu.replaceChildren(...buildFolderOptions(opId));
+    }
+    for(const btn of qsa('.fd-btn')){
+      const id = btn.dataset.opId; if(!id) continue;
+      const pid = findParentId(id);
+      const name = pid? (state.ops.find(o=>o.id===pid)?.params?.name || 'Unnamed Folder') : 'Root';
+      btn.innerHTML = `📁 ${name} <span style="font-size:.6rem;">▼</span>`;
+    }
+  }
+  function buildFolderOptions(opId){
+    const items = [];
+    const currentParent = findParentId(opId);
+    items.push(el('button',{class:'fd-item'+(currentParent? '':' selected'), onClick:()=>{ moveToFolder(opId,'root'); closeAllFolderMenus(); }},['📂 Root']));
+    for(const f of state.ops.filter(o=>o.toolId==='folder')){
+      const fname = f.params?.name || 'Unnamed Folder';
+      const selected = currentParent===f.id;
+      items.push(el('button',{class:'fd-item'+(selected?' selected':''), onClick:()=>{ moveToFolder(opId,f.id); closeAllFolderMenus(); }},[`📁 ${fname}`]));
+    }
+    return items;
+  }
+  function refreshTargetFolderDropdown(){
+    const select = qs('#target-folder-select');
+    if(!select) return;
+    
+    // Clear existing options
+    select.replaceChildren();
+    
+    // Add root option
+    const rootOption = el('option', {value: 'root'}, ['📂 Root']);
+    if(state.targetFolderId === 'root') rootOption.selected = true;
+    select.append(rootOption);
+    
+    // Add folder options
+    for(const folder of state.ops.filter(o => o.toolId === 'folder')){
+      const folderName = folder.params?.name || 'Unnamed Folder';
+      const option = el('option', {value: folder.id}, [`📁 ${folderName}`]);
+      if(state.targetFolderId === folder.id) option.selected = true;
+      select.append(option);
+    }
+  }
+  
+  function closeAllFolderMenus(){ qsa('.fd-menu').forEach(m=>m.classList.remove('show')); qsa('.fd-btn').forEach(b=>b.setAttribute('aria-expanded','false')); }
+
+  // ============ G-code ============
+  function generateGCodeForList(list){
+    let s='';
+    for(const op of list){
+      if(op.toolId==='folder') s += TOOL_BY_ID.folder.gcode(op);
+      else s += `;Operation: ${op.name}\n` + (TOOL_BY_ID[op.toolId]?.gcode(op) || '');
+    }
+    return s;
+  }
+  function generateGCode(){
+    let s = `;Renishaw Probe Routine - Generated by Probe Builder\n;Program: PROBE_ROUTINE.NC\n;Date: ${new Date().toLocaleDateString()}\n\n;Initialize program\nG0 G17 G40 G49 G80 G90\n\n`;
+    s += generateGCodeForList(state.ops);
+    s += `;End of probe routine\nG65 P9833 (Store probe results)\nG0 G53 Z0. (Return to home position)\nM30\n`;
+    return s;
+  }
+  function renderGCode(){ gcodePre.textContent = generateGCode(); }
+
+  // ============ Modal System (Edit + Confirm) ============
+  const backdrop = qs('#backdrop');
+  const mb = qs('#modal-body');
+  const mf = qs('#modal-footer');
+  const mt = qs('#modal-title');
+
+  function openModal(){ backdrop.classList.add('show'); backdrop.setAttribute('aria-hidden','false'); }
+  function closeModal(){ backdrop.classList.remove('show'); backdrop.setAttribute('aria-hidden','true'); mb.replaceChildren(); mf.replaceChildren(); }
+
+  async function confirm(title, message){
+    mt.textContent = title; mb.replaceChildren(el('p',{},[message]));
+    return new Promise(resolve=>{
+      const cancel = el('button',{class:'btn', onClick:()=>{ closeModal(); resolve(false); }},['Cancel']);
+      const ok = el('button',{class:'btn btn-blue', onClick:()=>{ closeModal(); resolve(true); }},['Confirm']);
+      mf.replaceChildren(cancel, ok);
+      openModal();
+    });
+  }
+
+  function openEdit(opId){
+    const op = findOp(opId); if(!op) return;
+    state.editingId = opId;
+    const isFolder = op.toolId==='folder';
+    mt.textContent = 'Edit ' + (isFolder? (op.params?.name||'Folder') : op.name);
+
+    const header = el('div',{style:'display:flex; align-items:center; gap:.75rem; margin-bottom:1rem;'},[
+      el('span',{class:'icon', style:'font-size:1.8rem;'},[ isFolder? '📁' : op.icon ]),
+      el('div',{},[
+        el('h4',{style:'font-size:1.05rem; font-weight:600;'},[ isFolder? (op.params?.name||'Folder') : op.name ]),
+        el('p',{style:'color:var(--muted);'},[ op.description ])
+      ])
+    ]);
+
+    const grid = el('div',{class:'grid2'});
+
+    for(const key of Object.keys(op.params)){
+      const value = op.params[key];
+      const group = el('div',{class:'grp'+(key==='description'? ' full':'')});
+      const label = el('label',{class:'lab'},[ toLabel(key) ]);
+
+      let input;
+      const paramOpts = TOOL_BY_ID[op.toolId]?.parameterOptions?.[key];
+      if(key==='description'){
+        input = el('textarea',{class:'ta'}); input.value = value ?? '';
+      } else if(Array.isArray(paramOpts)){
+        input = el('select',{class:'sel'});
+        for(const opt of paramOpts){ input.append(el('option',{value:opt, selected: String(opt)===String(value)},[opt])); }
+      } else {
+        const isText = key==='name';
+        input = el('input',{class:'inp', type: isText? 'text':'number'});
+        if(!isText){ input.step = /(Number|Speed|offset|length|Dia|width|height|feed|x|y|z|A|B|I|J)/i.test(key)? '1':'0.001'; }
+        input.value = value;
+      }
+
+      input.addEventListener('input', ()=>{
+        const val = input.tagName==='SELECT' ? input.value : (input.type==='number' ? (parseFloat(input.value)||0) : input.value);
+        updateParams(op.id, {[key]: val});
+        if(isFolder && key==='name'){ mt.textContent = 'Edit '+ val; }
+      });
+
+      group.append(label, input);
+      grid.append(group);
+    }
+
+    mb.replaceChildren(header, grid);
+    const done = el('button',{class:'btn btn-blue', onClick:()=>{ closeModal(); state.editingId=null; }},['Done']);
+    mf.replaceChildren(done);
+    openModal();
+  }
+
+  function toLabel(key){ return key.replace(/([A-Z])/g,' $1').replace(/^./, s=>s.toUpperCase()); }
+
+  // ============ Events (delegated) ============
+  document.addEventListener('click', (e)=>{
+    const target = e.target;
+
+    // Backdrop outside click closes modal
+    if(target === backdrop){ closeModal(); return; }
+
+    // Close folder menus when clicking outside
+    if(!target.closest('.folder-selector')) closeAllFolderMenus();
+
+    // Open folder menu
+    if(target.classList.contains('fd-btn')){
+      const id = target.dataset.opId; const menu = qs('#fd-'+id);
+      const open = menu.classList.contains('show');
+      closeAllFolderMenus();
+      if(!open){ menu.classList.add('show'); target.setAttribute('aria-expanded','true'); menu.replaceChildren(...buildFolderOptions(id)); }
+      return;
+    }
+
+    // Controls via data-action
+    const btn = target.closest('[data-action]');
+    if(!btn) return;
+    const action = btn.dataset.action; const id = btn.dataset.id; const parentId = btn.dataset.parentId || null;
+
+    switch(action){
+      case 'close-modal': closeModal(); break;
+      case 'edit': openEdit(id); break;
+      case 'delete': removeOp(id); break;
+      case 'duplicate': duplicateOp(id); break;
+      case 'toggle-folder': toggleFolderCollapse(id); break;
+
+      case 'move-up': {
+        const i = state.ops.findIndex(o => o.id === id);
+        if (i > 0) moveOp(i, i - 1);
+        break;
+      }
+      case 'move-down': {
+        const i = state.ops.findIndex(o => o.id === id);
+        if (i > -1 && i < state.ops.length - 1) moveOp(i, i + 1);
+        break;
+      }
+      case 'move-child-up': {
+        if (!parentId) break;
+        const f = findOp(parentId);
+        const i = f?.children?.findIndex(c => c.id === id) ?? -1;
+        if (i > 0) moveChild(parentId, i, i - 1);
+        break;
+      }
+      case 'move-child-down': {
+        if (!parentId) break;
+        const f = findOp(parentId);
+        const i = f?.children?.findIndex(c => c.id === id) ?? -1;
+        if (i > -1 && i < (f.children.length - 1)) moveChild(parentId, i, i + 1);
+        break;
+      }
+    }
+  });
+
+  // Header buttons
+  qs('#btn-toggle-gcode').addEventListener('click', ()=>{
+    state.showGCode = !state.showGCode;
+    gcodePanel.classList.toggle('show', state.showGCode);
+    qs('#gc-label').textContent = state.showGCode? 'Hide G‑Code':'Show G‑Code';
+    if(state.showGCode) renderGCode();
+  });
+  qs('#btn-download').addEventListener('click', ()=>{
+    const g = generateGCode();
+    const blob = new Blob([g], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = el('a',{href:url, download:'probe_routine.nc'});
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // Target folder dropdown
+  qs('#target-folder-select').addEventListener('change', (e)=>{
+    state.targetFolderId = e.target.value;
+  });
+
+  // Toolbox rendering (data-driven)
+  function renderToolbox(){
+    const byCat = { organization:[], setup:[], probe:[] };
+    for(const t of TOOLS){ byCat[t.category]?.push(t); }
+    for(const [cat, list] of Object.entries(byCat)){
+      const container = qs('#tools-'+cat);
+      container.replaceChildren(...list.map(t=>
+        el('div',{class:'tool', role:'button', tabIndex:0, onClick:()=>addOp(t.id)},[
+          el('div',{},[ el('div',{class:'icon', style:'margin-bottom:.5rem;'},[t.icon]) ]),
+          el('div',{},[ el('h4',{},[t.name]), el('p',{},[t.desc]) ]),
+          el('button',{class:'add', onClick:(e)=>{ e.stopPropagation(); addOp(t.id); }},['+',' Add'])
+        ])
+      ));
+    }
+  }
+
+  // Init
+  renderToolbox();
+  renderAll();
+  </script>
+</body>
+</html>
